@@ -42,10 +42,10 @@ local function onVehicleResetted(id)
             local obj = getObjectByID(id)
 
             -- Aggression
-            local baseAggression = trafficVeh.vars.baseAggression or 0.35
-            local aggression = min(max(random() * random() * 1.65 + 0.35, baseAggression), 2) -- lower skew between 0.35 and 2
+            local aggression = random() * random() * 1.65 + 0.35 -- lower skew between 0.35 and 2
             log('D', logTag, '(' .. id .. ') Set Aggression: (' .. aggression .. ')')
             obj:queueLuaCommand('ai.setAggression(' .. aggression .. ')')
+            trafficVeh.role.driver.aggression = aggression
 
             -- Tough traffic has higher damage limits
             local damageLimits = trafficVeh.damageLimits
