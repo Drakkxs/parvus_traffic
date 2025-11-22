@@ -4,6 +4,9 @@ M.dependencies = { 'gameplay_traffic' }
 
 local logTag = 'parvus_traffic'
 local random = math.random
+local floor = math.floor
+local min = math.min
+local max = math.max
 local trafficAmount = gameplay_traffic.getTrafficAmount -- traffic amount
 local trafficData = gameplay_traffic.getTrafficData     -- traffic table data
 
@@ -18,10 +21,12 @@ local function onVehicleResetted(id)
     if gameplay_traffic.getState() ~= "on" then return end
     local trafficVeh = trafficData()[id]
     if trafficVeh and trafficVeh.isAi then
-        local veh = getObjectByID(id)
-        local function probabilityWithinTraffic(activeOnly, startChance, decay, threshold)
+        local obj = getObjectByID(id)
+
+        -- Past threshold the chances begin to drop
+        local function probabilityWithinValue(value, startChance, decay, threshold)
             -- Get amount of active traffic vehicles
-            local N = trafficAmount(activeOnly)
+            local N = value
 
             local chance
             if N <= threshold then
@@ -33,18 +38,29 @@ local function onVehicleResetted(id)
             return chance
         end
 
-        -- Past 12 cars the chances of aggressive drives begin to drop
-        if random() < probabilityWithinTraffic(true, 0.8, 0.05, 12) then
-            local aggression = random() * random() * 1.65 + 0.35 -- lower skew between 0.35 and 2
-            log('D', logTag, '(' .. id .. ') Set Aggression: (' .. aggression .. ')')
-            veh:queueLuaCommand('ai.setAggression(' .. aggression .. ')')
+        if random() < probabilityWithinValue(trafficAmount(true), 0.8, 0.05, 12) then
 
-            -- Past 12 cars the chances begin to drop
-            local outlawChance = probabilityWithinTraffic(true, 0.8, 0.1, 12)
-            if aggression > 1.5 and math.random() < outlawChance then
+            -- Aggression
+            local baseAggression = trafficVeh.vars.baseAggression or 0.35
+            local aggression = min(max(random() * random() * 1.65 + 0.35, baseAggression), 2) -- lower skew between 0.35 and 2
+            log('D', logTag, '(' .. id .. ') Set Aggression: (' .. aggression .. ')')
+            trafficVeh.vars.baseAggression = aggression
+            obj:queueLuaCommand('ai.setAggression(' .. aggression .. ')')
+
+            -- Tough traffic has higher damage limits
+            local damageLimits = trafficVeh.damageLimits
+            if damageLimits and aggression > 1 and random() < probabilityWithinValue(trafficAmount(true), 0.8, 0.1, 12) then
+                for i, v in ipairs(damageLimits) do
+                    damageLimits[i] = floor(v * aggression)
+                end
+                log('D', logTag, '('.. id ..') Tougher Vehicle Spawned (DamageLimits='.. table.concat(damageLimits, " ") ..')')
+            end
+
+            -- 
+            if aggression > 1.5 and random() < probabilityWithinValue(trafficAmount(true), 0.8, 0.1, 12) then
                 -- 20% chance of outlaw if aggression is high
-                veh:queueLuaCommand('ai.setSpeedMode("off")')
-                log('D', logTag, '(' .. id .. ') Outlaw driver spawned (Aggression=' .. aggression .. ')')
+                obj:queueLuaCommand('ai.setSpeedMode("off")')
+                log('D', logTag, '(' .. id .. ') Outlaw driver Spawned (Aggression=' .. aggression .. ')')
             end
         end
     end
