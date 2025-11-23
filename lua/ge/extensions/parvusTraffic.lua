@@ -14,6 +14,7 @@ local max = math.max
 local trafficAmount = gameplay_traffic.getTrafficAmount -- traffic amount
 local trafficData = gameplay_traffic.getTrafficData     -- traffic table data
 local trafficGetState = gameplay_traffic.getState       -- state
+local trafficVars = gameplay_traffic.getTrafficVars  -- started
 
 -- [[SWITCHBOARDS]]
 local tAggresion = {}
@@ -58,9 +59,9 @@ local function onVehicleResetted(id)
             local obj = getObjectByID(id)
             local res = tAggresion.resolution
             local maxr = tAggresion.maxAggression
-            local minr = tAggresion.baseAggression
+            local minr = trafficVars().baseAggression or tAggresion.baseAggression
             local aggression = (
-                (random(0, res) / res) ^ tAggresion.skew * (maxr - minr) + minr
+                ((random(0, res) / res) ^ tAggresion.skew) * (maxr - minr) + minr
             ) -- lower skew between 0.35 and 2
             log('D', logTag, '(' .. id .. ') Set Aggression: (' .. aggression .. ')')
             obj:queueLuaCommand('ai.setAggression(' .. aggression .. ')')
@@ -70,7 +71,8 @@ local function onVehicleResetted(id)
                 for i, v in ipairs(damageLimits) do
                     damageLimits[i] = floor(v * aggression)
                 end
-                log('D', logTag, '(' .. id .. ') Tougher Vehicle Spawned (DamageLimits=' .. table.concat(damageLimits, " ") .. ')')
+                log('D', logTag,
+                '(' .. id .. ') Tougher Vehicle Spawned (DamageLimits=' .. table.concat(damageLimits, " ") .. ')')
             end
 
             if aggression > tOutlaw.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
@@ -79,8 +81,6 @@ local function onVehicleResetted(id)
                 log('D', logTag, '(' .. id .. ') Outlaw driver Spawned (Aggression=' .. aggression .. ')')
             end
         end
-
-        log('D', logTag, '(' .. id .. ') Vehicle Seen')
     end
 end
 
