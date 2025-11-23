@@ -68,7 +68,7 @@ local function onVehicleResetted(id)
 
             local damageLimits = trafficVeh.damageLimits
             if aggression > tToughness.aggressionThreshold and damageLimits and random() > probabilityWithinValue(trafficAmount(true), tToughness.startchance, tToughness.decay, tToughness.threshold) then
-                for i = 1, ipairs(damageLimits) do
+                for i = 1, #damageLimits do
                     damageLimits[i] = floor(v * aggression)
                 end
                 log('D', logTag,'(' .. id .. ') Tougher Vehicle Spawned (DamageLimits=' .. table.concat(damageLimits, " ") .. ')')
