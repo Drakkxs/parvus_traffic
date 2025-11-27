@@ -222,7 +222,7 @@ function P.processHonkedAtVehicles(callerID, targetID)
                     end
                     log('D', logTag, '(' .. id .. ') Vehicle is no longer obstructing')
                 end,
-                args = { targetID, targetVeh.pos, 1 }
+                args = { targetID, targetVeh.pos, 3 }
             }
             log('D', logTag, '(' .. targetID .. ') Obstruction Clear Queued')
             return
