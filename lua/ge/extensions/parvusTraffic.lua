@@ -177,8 +177,8 @@ function P.processHonkedAtVehicles(callerID, targetID)
         -- Get the current speed (in m/s)
         local speed = targetVeh.speed or 0
 
-        if targetVeh and speed > 2 then
-            log('D', logTag, '(' .. targetID .. ') Is Moving')
+        if targetVeh and speed > 3 then
+            log('D', logTag, '(' .. targetID .. ') Is Moving (' .. speed .. ')')
             return
         end
 
@@ -203,7 +203,7 @@ function P.processHonkedAtVehicles(callerID, targetID)
         local strikes = #vehData.obstructions
 
 
-        if strikes > 3 then
+        if strikes > 5 then
             targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
                 timer = 10.00,
                 func = function(id, lastPos, distance)
@@ -223,7 +223,6 @@ function P.processHonkedAtVehicles(callerID, targetID)
                 args = { targetID, targetVeh.pos, 1 }
             }
             log('D', logTag, '(' .. targetID .. ') Obstruction Clear Queued')
-            targetVeh:resetAll()
             table.clear(vehData.obstructions) -- clear strikes to allow other rules to try helping vehicle before it's removed
             return
         elseif strikes > 1 then
@@ -315,15 +314,17 @@ local function parvusTrafficSetupAggression(id)
         ) -- lower skew between 0.35 and 2
 
         local function roleSetAggression(c, a)
-            local veh = traffic()[id]
-            c = c or 0
-            if c > 1 then return end
-            if veh and veh.role then
-                veh.role.driver.aggression = aggression
-                log('D', logTag, '(' .. id .. ') Set Role Aggression: (' .. a .. ')')
-                return
+            if random() > probabilityWithinValue(trafficAmount(true), tAggresion.startchance, tAggresion.decay, tAggresion.threshold) then
+                local veh = traffic()[id]
+                c = c or 0
+                if c > 1 then return end
+                if veh and veh.role then
+                    veh.role.driver.aggression = aggression
+                    log('D', logTag, '(' .. id .. ') Set Role Aggression: (' .. a .. ')')
+                    return
+                end
+                log('D', logTag, '(' .. id .. ') Failed to set aggression: (' .. a .. ')')
             end
-            log('D', logTag, '(' .. id .. ') Failed to set aggression: (' .. a .. ')')
         end
 
         -- self.queuedFuncs = {}  keys: timer, func, args, vLua (vLua string overrides func and args)
