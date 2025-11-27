@@ -235,7 +235,7 @@ function P.processHonkedAtVehicles(callerID, targetID)
             log('D', logTag, '(' .. targetID .. ') Queued AI to Random')
 
             targetVeh.queuedFuncs.parvusTrafficSetAITraffic = {
-                timer = 2.25,
+                timer = max(2.25, square(random()) * strikes),
                 vLua = string.format('ai.setMode("traffic")')
             }
             log('D', logTag, '(' .. targetID .. ') Queued AI to Traffic')
@@ -355,15 +355,15 @@ local function parvusTrafficSetupAggression(id)
                 vLua = string.format('ai.setSpeedMode("off")'),
             }
             log('D', logTag, '(' .. id .. ') Outlaw Spawned (Aggression=' .. aggression .. ')')
-        end
 
-        -- Reckless
-        if aggression > tReckless.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
-            targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
-                timer = 2.25,
-                vLua = string.format('ai.setMode("random")')
-            }
-            log('D', logTag, '(' .. id .. ') Reckless Driver Spawned (Aggression=' .. aggression .. ')')
+            -- Reckless Outlaw
+            if aggression > tReckless.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+                targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
+                    timer = 2.25,
+                    vLua = string.format('ai.setMode("random")')
+                }
+                log('D', logTag, '(' .. id .. ') Reckless Outlaw Spawned (Aggression=' .. aggression .. ')')
+            end
         end
     end
 end
