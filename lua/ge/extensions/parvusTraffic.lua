@@ -25,6 +25,7 @@ local auxiliaryData = {}
 local tAggresion = {}
 local tToughness = {}
 local tOutlaw = {}
+local tReckless = {}
 
 local auxiliaryData = {      -- additional data for traffic
     queuedVehicle = 0,       -- current traffic vehicle index
@@ -40,6 +41,7 @@ local function parvusTrafficResetAllBoards()
     tAggresion = { resolution = 2, skew = 3, baseAggression = 0.3, maxAggression = 2, startchance = 0.8, decay = 0.1, threshold = 2 }
     tToughness = { aggressionThreshold = 1, startchance = 0.8, decay = 0.1, threshold = 2 }
     tOutlaw = { aggressionThreshold = 1.5, startchance = 0.8, decay = 0.1, threshold = 2 }
+    tReckless = { aggressionThreshold = 1.9, startchance = 0.5, decay = 0.1, threshold = 2 }
 end
 parvusTrafficResetAllBoards()
 
@@ -241,7 +243,7 @@ function P.processHonkedAtVehicles(callerID, targetID)
         elseif strikes > 0 then
             targetVeh.queuedFuncs.parvusTrafficResetAI = {
                 timer = 0.25,
-                vLua = 'ai.reset()', -- this is called to reset the AI plan
+                vLua = string.format('ai.reset()'), -- this is called to reset the AI plan
             }
             log('D', logTag, '(' .. targetID .. ') Queued AI Rest')
             return
@@ -341,18 +343,27 @@ local function parvusTrafficSetupAggression(id)
         if aggression > tToughness.aggressionThreshold and damageLimits and random() > probabilityWithinValue(trafficAmount(true), tToughness.startchance, tToughness.decay, tToughness.threshold) then
             log('D', logTag, '(' .. id .. ') Tougher Driver Spawned (Aggression=' .. aggression .. ')')
             for i, v in ipairs(damageLimits) do
-                targetVeh.damageLimits[i] = max(v, floor(v * aggression))
+                targetVeh.damageLimits[i] = floor(max(v, v * aggression))
             end
-            log('D', logTag, 'Damage Limits: (' .. dumps(damageLimits) .. ')')
+            log('D', logTag, 'Damage Limits: (' .. dumps(targetVeh.damageLimits) .. ')')
         end
 
         -- Outlaws
         if aggression > tOutlaw.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
             targetVeh.queuedFuncs.parvusTrafficsetSpeedMode = {
                 timer = 0.25,
-                vLua = 'ai.setSpeedMode("off")',
+                vLua = string.format('ai.setSpeedMode("off")'),
             }
             log('D', logTag, '(' .. id .. ') Outlaw Spawned (Aggression=' .. aggression .. ')')
+        end
+
+        -- Reckless
+        if aggression > tReckless.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+            targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
+                timer = 2.25,
+                vLua = string.format('ai.setMode("random")')
+            }
+            log('D', logTag, '(' .. id .. ') Reckless Driver Spawned (Aggression=' .. aggression .. ')')
         end
     end
 end
