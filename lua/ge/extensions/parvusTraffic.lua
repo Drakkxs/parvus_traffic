@@ -205,7 +205,7 @@ function P.processHonkedAtVehicles(callerID, targetID)
         local strikes = #vehData.obstructions
 
 
-        if strikes > 5 then
+        if strikes > 2 then
             targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
                 timer = 10.00,
                 func = function(id, lastPos, distance)
@@ -225,9 +225,19 @@ function P.processHonkedAtVehicles(callerID, targetID)
                 args = { targetID, targetVeh.pos, 1 }
             }
             log('D', logTag, '(' .. targetID .. ') Obstruction Clear Queued')
-            table.clear(vehData.obstructions) -- clear strikes to allow other rules to try helping vehicle before it's removed
             return
-        elseif strikes > 1 then
+        end
+
+        if strikes > 1 then
+            -- honk incase a vehicle is infront of this one
+            targetVeh.queuedFuncs.parvusTrafficHonkBeforeRandom = {
+                timer = min(1, square(random()) * 1.5),
+                func = function()
+                    if targetVeh then targetVeh:honkHorn(max(0.25, square(random()))) end
+                end,
+                args = {}
+            }
+
             targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
                 timer = 0.25,
                 vLua = string.format('ai.setMode("random")') -- this is called to allow AI to make drastic efforts to get through
