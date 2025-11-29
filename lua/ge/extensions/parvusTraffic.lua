@@ -1,6 +1,7 @@
--- Aggression based traffic
-local M = {}
-local P = {}
+-- Traffic with aggression based actions
+-- Includes cleanup for crashes
+-- Made By Parvus
+local M, P = {}, {}
 M.dependencies = { 'gameplay_traffic' }
 
 local logTag = 'parvusTraffic'
@@ -11,59 +12,58 @@ local floor = math.floor
 local min = math.min
 local max = math.max
 
--- traffic interface
-local trafficAmount = gameplay_traffic.getTrafficAmount -- traffic amount
-local traffic = gameplay_traffic.getTrafficData         -- traffic table data
-local trafficGetState = gameplay_traffic.getState       -- state
-local trafficVars = gameplay_traffic.getTrafficVars     -- started
-
 -- [[DATA]]
 local trafficIdsSorted = {}
-local auxiliaryData = {}
+local parvusAuxData = { -- additional data for traffic
+    queuedVehicle = 0,  -- current traffic vehicle index
+    vehDataTable = {},  -- { 'vehID' = {actionCooldown = 0, lastHornState = false}}
+    minMovingSpeed = 4, -- The minimum speed a vehicle has to be going above to be considered moving
 
--- [[SWITCHBOARDS]]
-local tAggresion = {}
-local tToughness = {}
-local tOutlaw = {}
-local tReckless = {}
-
-local auxiliaryData = {      -- additional data for traffic
-    queuedVehicle = 0,       -- current traffic vehicle index
-    queuedHonkedVehicle = 0, -- current vehicle that's been honked at tracker
-    lastHornState = {},
-
-    queuedInteraction = 0,   -- index for staggering the honkedInteractions list
-    honkedInteractions = {}, -- { {callerID, targetID}, {callerID, targetID}, ... }
-    vehData = {},            -- { 'targetID' = {obstructionCooldown = 0, obstructions = {{callerID, targetID}}}}
+    -- deadlock happens when no vehicles are available to honk to clear obstructions
+    -- ai.lua dictates that traffic vehicles only honk once when 'forced to stop' and otherwise will wait indefinitely
+    -- this creates a 'deadlock' when no vehicle feels 'forced to stop' and the only one left to fix this is the player
+    deadlockTimer = 0
 }
 
-local function parvusTrafficResetAllBoards()
-    tAggresion = { resolution = 2, skew = 3, baseAggression = 0.3, maxAggression = 2, startchance = 0.8, decay = 0.1, threshold = 2 }
-    tToughness = { aggressionThreshold = 1, startchance = 0.8, decay = 0.1, threshold = 2 }
-    tOutlaw = { aggressionThreshold = 1.5, startchance = 0.8, decay = 0.1, threshold = 2 }
-    tReckless = { aggressionThreshold = 1.9, startchance = 0.5, decay = 0.1, threshold = 2 }
-end
-parvusTrafficResetAllBoards()
+-- [[SWITCHBOARDS]]
+local tAggresion = { resolution = 2, skew = 3, baseAggression = 0.3, maxAggression = 2, startchance = 0.9, decay = 0.1, threshold = 2 }
+local tToughness = { aggressionThreshold = 1, startchance = 0.9, decay = 0.1, threshold = 2 }
+local tOutlaw = { aggressionThreshold = 1.5, startchance = 0.9, decay = 0.1, threshold = 2 }
+local tReckless = { aggressionThreshold = 1.9, startchance = 0.9, decay = 0.1, threshold = 2 }
 
 -- when extension loaded
 local function onExtensionLoaded()
     log('D', logTag, "Extension Loaded")
 end
 
+-- returns role, driver, and personality or nil for each
+function P.getDriverPersonality(id)
+    local veh = gameplay_traffic.getTrafficData()[id]
+    local role, driver, personality;
+    if veh then
+        role = veh.role
+        if role then
+            driver = role.driver
+            if driver then
+                personality = driver.personality
+            end
+        end
+    end
+    return role, driver, personality
+end
+
 function P.checkTargetVisible(id, targetId) -- checks if the other vehicle is visible (static raycast)
-    local veh = traffic()[id]
+    local veh = gameplay_traffic.getTrafficData()[id]
     local visible = false
-    local targetVeh = targetId and traffic()[targetId]
+    local targetVeh = targetId and gameplay_traffic.getTrafficData()[targetId]
     if targetVeh then
         visible = veh:checkRayCast(targetVeh.pos + vec3(0, 0, 1))
     end
-    log('D', logTag, '(' .. targetId .. ') Is not visble to (' .. id .. ')')
     return visible
 end
 
-function P.getTrafficInfront(id, pos, distance, filters) -- filters are functions to test the traffic
-    local veh = traffic()[id]
-    filters = filters or {}
+function P.getTrafficInfront(id, pos, distance, Aionly) -- filters are functions to test the traffic
+    local veh = gameplay_traffic.getTrafficData()[id]
     -- If 'pos' is not provided, we use the vehicle's position.
     local callerPos = pos or veh.pos
 
@@ -72,73 +72,135 @@ function P.getTrafficInfront(id, pos, distance, filters) -- filters are function
     -- convert the meter distance to systematic units
     local maxDistLimitSq = distance and (distance * distance) or math.huge
 
-    for _, targetID in ipairs(trafficIdsSorted) do
-        local targetVeh = traffic()[targetID]
+    for _, ctID in ipairs(trafficIdsSorted) do
+        local ctVeh = gameplay_traffic.getTrafficData()[ctID]
 
-        local distSq = callerPos:squaredDistance(targetVeh.pos)
+        local distSq = callerPos:squaredDistance(ctVeh.pos)
 
-        if distSq > maxDistLimitSq then
-            goto continue_loop
-        end
-
-        local required_check =
-            (be:getObjectActive(targetID)) and
-            (P.checkTargetVisible(id, targetID)) and
-            (veh.dirVec:dot(targetVeh.pos - veh.pos) > 0)
-
-        if not required_check then
-            goto continue_loop -- Skip vehicles that are behind or invisible
-        end
-
-        local passed_custom_filters = true
-        -- The filters table is expected to contain functions { [1] = func1, [2] = func2, ...}
-        for _, filter_func in ipairs(filters) do
-            if not filter_func(targetVeh) or targetVeh.filter_func then
-                passed_custom_filters = false
-                break
+        if distSq < maxDistLimitSq then
+            if -- required checks
+                (not Aionly or ctVeh.isAi)
+                ---@diagnostic disable-next-line: undefined-field
+                and (be:getObjectActive(ctID))
+                and (P.checkTargetVisible(id, ctID))
+                and (veh.dirVec:dot(ctVeh.pos - veh.pos) > 0)
+            then
+                if distSq < bestDist then
+                    bestId = ctID
+                    bestDist = distSq
+                end
             end
         end
-
-        if passed_custom_filters then
-            if distSq < bestDist then
-                bestId = targetID
-                bestDist = distSq
-            end
-        end
-
-        ::continue_loop::
     end
 
     return bestId, math.sqrt(bestDist) -- Return the final ID and the actual distance
 end
 
 -- when horn electronic is true
-function P.parvusTrafficHonkHorn(id)
-    local veh = traffic()[id]
-    log('D', logTag, '(' .. id .. ') Vehicle is honking')
+function P.hornActive(callerID)
+    local veh = gameplay_traffic.getTrafficData()[callerID]
+    log('D', logTag, '(' .. callerID .. ') Vehicle is honking')
 
     -- Get the current speed (in m/s)
-    local speed = veh.speed or 0
+    local targetID, dist = P.getTrafficInfront(callerID, veh.pos, 60, true)
 
-    -- dynamic honking distance (D = min(max(V * 2, 10), 50))
-    local dynaDist = math.min(math.max(speed * 2, 30), 60)
-    local targetId, dist = P.getTrafficInfront(id, veh.pos, dynaDist)
+    if not targetID then return end
+    log('D', logTag, 'Target: (' .. targetID .. ') Distance: (' .. dist .. ')')
 
-    if not targetId then return end
-    log('D', logTag, 'Target: (' .. targetId .. ') Distance: (' .. dist .. ') HonkDistance: (' .. dynaDist .. ')')
+    local targetVeh = gameplay_traffic.getTrafficData()[targetID]
+    if not targetVeh then return end
+    local vehData = P.getVehData(targetID)
 
-    table.insert(auxiliaryData.honkedInteractions, { id, targetId })
+    -- a cooldown on how often a vehicle's honks will cause actions
+    if (vehData.actionCooldown or 0) > 0 then return end
+    vehData.actionCooldown = (vehData.actionCooldown or 0) + 10
+
+    log('D', logTag, 'Honk Process: Caller (' .. callerID .. ')  Target:  (' .. targetID .. ')')
+
+    if not targetVeh.isAi then
+        log('D', logTag, '(' .. targetID .. ') Not Ai')
+        return
+    end
+
+    local speed = targetVeh.speed
+    if targetVeh and speed > parvusAuxData.minMovingSpeed then
+        log('D', logTag, '(' .. targetID .. ') Is NOT Obstructing: MOVING (' .. speed .. ')')
+        return
+    end
+
+    targetVeh:honkHorn(max(0.25, square(random()))) -- feedback
+
+    local honkeeObj = getObjectByID(targetID)
+    if not honkeeObj then return end
+    honkeeObj:queueLuaCommand('ai.reset()')
+    log('D', logTag, '(' .. targetID .. ') Queued Ai Reset')
+
+    P.queueObstructionClear(callerID, targetID)
 end
 
--- begins tracking vehicle
-function P.parvusTrafficTracking(id)
-    if not auxiliaryData.vehData[id] then auxiliaryData.vehData[id] = {} end
-    local vehData = auxiliaryData.vehData[id]
-    if not vehData.obstructionCooldown then vehData.obstructionCooldown = 0 end
-    if not vehData.obstructions then vehData.obstructions = {} end
-    if not vehData.lastObstuctionPos then
-        vec3()
-        vehData.lastObstuctionPos = traffic()[id].pos
+function P.getVehData(id)
+    local v = parvusAuxData.vehDataTable[id]
+    if v then
+        return v
+    else
+        return P.setupVehData(id)
+    end
+end
+
+function P.setupVehData(id)
+    local newtable = {}
+    parvusAuxData.vehDataTable[id] = newtable
+    return newtable
+end
+
+function P.queueObstructionClear(callerID, targetID)
+    local targetVeh = gameplay_traffic.getTrafficData()[targetID]
+    if targetVeh.queuedFuncs.parvusTrafficRemoveStuck then return end
+    targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
+        timer = 10.00,
+        args = { callerID, targetID, targetVeh.pos, 3 },
+        func = function(cid, tid, lp, dst)
+            local tv = gameplay_traffic.getTrafficData()[tid]
+            local cv = gameplay_traffic.getTrafficData()[cid]
+            if tv then tv:honkHorn(max(0.25, square(random()))) end
+            if cv and cv.isAi then cv:honkHorn(max(0.25, square(random()))) end
+            if not tv then return end
+            if tv.speed <= 1 and tv.pos:squaredDistance(lp) < dst then
+                tv:modifyRespawnValues(-10)
+                if tv.respawn.activeRadius > 80 then
+                    log('D', logTag, '(' .. tv.id .. ') Vehicle is still active')
+                    return
+                end
+                tv:fade(5, true)
+                log('D', logTag, '(' .. tv.id .. ') Vehicle is still obstructing')
+                return
+            end
+            log('D', logTag, '(' .. tv.id .. ') Vehicle is no longer obstructing')
+        end
+    }
+    log('D', logTag, '(' .. targetID .. ') Obstruction Clear Queued')
+end
+
+function P.checkVehicle(id)
+    local vehData = P.getVehData(id)
+    if (vehData.actionCooldown or 0) > 0 then vehData.actionCooldown = (vehData.actionCooldown or 0) - 1 end
+
+    local tv = gameplay_traffic.getTrafficData()[id]
+    if tv and tv.isAi then
+        local deadlockTimer = parvusAuxData.deadlockTimer
+        if (deadlockTimer or 0) > 60 then
+            -- there is a deadlock
+            log('D', logTag, '(' .. id .. ') Deadlock is active')
+            local _, _, personality = P.getDriverPersonality(id)
+            if
+                personality and
+                random() > (personality.patience + random())                      -- patience drivers are harder to make honk
+            then
+                tv:honkHorn(max(0.25, square(random()) + personality.aggression)) -- aggresive drivers honk longer
+                log('D', logTag, '(' .. id .. ') Was made to honk to clear a deadlock ')
+                parvusAuxData.deadlockTimer = 0
+            end
+        end
     end
 
     local objMap = map and map.objects[id]
@@ -146,154 +208,57 @@ function P.parvusTrafficTracking(id)
 
     local currentHorn = objMap.states.horn and true or false
 
-    local prevHorn = auxiliaryData.lastHornState[id] or false
+    local prevHorn = vehData.lastHornState or false
 
     -- horn just turned on
     if currentHorn and not prevHorn then
-        P.parvusTrafficHonkHorn(id)
+        P.hornActive(id)
     end
 
     -- the current state for the next check
-    auxiliaryData.lastHornState[id] = currentHorn
-    if vehData.obstructionCooldown > 0 then vehData.obstructionCooldown = vehData.obstructionCooldown - 1 end
-end
-
-function P.processHonkedAtVehicles(callerID, targetID)
-    local targetVeh = traffic()[targetID]
-    if targetVeh then
-        local vehData = auxiliaryData.vehData[targetID]
-        local function modifyCooldown(v, add)
-            if not v then return end
-            v.obstructionCooldown = v.obstructionCooldown + (add or 0)
-        end
-        if vehData and vehData.obstructionCooldown > 0 then return end
-        modifyCooldown(vehData, 10) -- cooldown
-
-        log('D', logTag, 'Honk Process: Caller (' .. callerID .. ')  Target:  (' .. targetID .. ')')
-
-        if not targetVeh.isAi then
-            log('D', logTag, '(' .. targetID .. ') Not AI')
-            return
-        end
-
-        -- Get the current speed (in m/s)
-        local speed = targetVeh.speed or 0
-
-        if targetVeh and speed > 3 then
-            log('D', logTag, '(' .. targetID .. ') Is Moving (' .. speed .. ')')
-            return
-        end
-
-        -- honk incase a vehicle is infront of this one
-        targetVeh.queuedFuncs.parvusTrafficHonk = {
-            timer = min(1, square(random())),
-            func = function()
-                if targetVeh then targetVeh:honkHorn(max(0.25, square(random()))) end
-            end,
-            args = {}
-        }
-
-        -- reset obstructions when vehicle moves
-        if targetVeh.pos:squaredDistance(vehData.lastObstuctionPos) > square(5) then
-            log('D', logTag, '(' .. targetID .. ') Target Moved, clearing obstructions')
-            table.clear(vehData.obstructions)
-            -- update position
-            vehData.lastObstuctionPos = targetVeh.pos
-        end
-
-        table.insert(vehData.obstructions, { callerID, targetID })
-        local strikes = #vehData.obstructions
-
-
-        if strikes > 2 then
-            targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
-                timer = 10.00,
-                func = function(id, lastPos, distance)
-                    local veh = traffic()[id]
-                    if veh and veh.speed < 2 and veh.pos:squaredDistance(lastPos) < distance then
-                        veh:modifyRespawnValues(-10)
-                        if veh.respawn.activeRadius > 80 then
-                            log('D', logTag, '(' .. id .. ') Vehicle is still active')
-                            return
-                        end
-                        veh:fade(5, true)
-                        log('D', logTag, '(' .. id .. ') Vehicle is still obstructing')
-                        return
-                    end
-                    log('D', logTag, '(' .. id .. ') Vehicle is no longer obstructing')
-                end,
-                args = { targetID, targetVeh.pos, 3 }
-            }
-            log('D', logTag, '(' .. targetID .. ') Obstruction Clear Queued')
-            return
-        end
-
-        if strikes > 1 then
-            -- honk incase a vehicle is infront of this one
-            targetVeh.queuedFuncs.parvusTrafficHonkBeforeRandom = {
-                timer = min(1, square(random()) * 1.5),
-                func = function()
-                    if targetVeh then targetVeh:honkHorn(max(0.25, square(random()))) end
-                end,
-                args = {}
-            }
-
-            targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
-                timer = 0.25,
-                vLua = string.format('ai.setMode("random")') -- this is called to allow AI to make drastic efforts to get through
-            }
-            log('D', logTag, '(' .. targetID .. ') Queued AI to Random')
-
-            targetVeh.queuedFuncs.parvusTrafficSetAITraffic = {
-                timer = max(2.25, square(random()) * strikes),
-                vLua = string.format('ai.setMode("traffic")')
-            }
-            log('D', logTag, '(' .. targetID .. ') Queued AI to Traffic')
-            return
-        elseif strikes > 0 then
-            targetVeh.queuedFuncs.parvusTrafficResetAI = {
-                timer = 0.25,
-                vLua = string.format('ai.reset()'), -- this is called to reset the AI plan
-            }
-            log('D', logTag, '(' .. targetID .. ') Queued AI Rest')
-            return
-        end
-    end
+    vehData.lastHornState = currentHorn
 end
 
 -- updates every frame
-local function onUpdate(dt, dtSim)
+local function onUpdate(dtReal, dtSim)
     -- Only During Traffic
-    if trafficGetState() ~= "on" then return end
-    if trafficGetState() ~= "on" then return end
-    local vehCount = 0
+    if gameplay_traffic.getState() ~= "on" then return end
+    -- only when sim is actually running
+    if dtSim <= 0 then return end
+    local stoppedAiVehCount, vehCount, vehCountAi = 0, 0, 0
     for i, id in ipairs(trafficIdsSorted) do -- ensures consistent order of vehicles
         vehCount = vehCount + 1
-        local veh = traffic()[id]
+        local veh = gameplay_traffic.getTrafficData()[id]
         if veh then
+            if veh.isAi then
+                vehCountAi = vehCountAi + 1
+                if veh.speed < parvusAuxData.minMovingSpeed then
+                    stoppedAiVehCount = stoppedAiVehCount + 1
+                end
+            end
+
+            ---@diagnostic disable-next-line: undefined-field
             if be:getObjectActive(id) then
-                if i == auxiliaryData.queuedVehicle then -- checks one vehicle per frame, as an optimization
-                    P.parvusTrafficTracking(id)
+                if i == parvusAuxData.queuedVehicle then -- checks one vehicle per frame, as an optimization
+                    P.checkVehicle(id)
                 end
             end
         end
     end
 
-    auxiliaryData.queuedVehicle = auxiliaryData.queuedVehicle + 1
-    if auxiliaryData.queuedVehicle > vehCount then
-        auxiliaryData.queuedVehicle = 1
+    parvusAuxData.queuedVehicle = parvusAuxData.queuedVehicle + 1
+    if parvusAuxData.queuedVehicle > vehCount then
+        parvusAuxData.queuedVehicle = 1
     end
 
-    local interactionCount = 0
-    for i, interaction in ipairs(auxiliaryData.honkedInteractions) do
-        interactionCount = interactionCount + 1
-        if interaction then
-            local callerID = interaction[1]
-            local targetID = interaction[2]
-
-            P.processHonkedAtVehicles(callerID, targetID)
-            table.remove(auxiliaryData.honkedInteractions, i)
+    if stoppedAiVehCount < vehCountAi then
+        -- decrease deadlockTimer
+        if (parvusAuxData.deadlockTimer or 0) > 0 then
+            parvusAuxData.deadlockTimer = max(0, parvusAuxData.deadlockTimer or 0) - dtSim
         end
+    else
+        -- indecrease deadlockTimer
+        parvusAuxData.deadlockTimer = (parvusAuxData.deadlockTimer or 0) + dtSim
     end
 end
 
@@ -314,63 +279,68 @@ local function probabilityWithinValue(value, startChance, decay, threshold)
 end
 
 local function parvusTrafficSetupAggression(id)
-    local targetVeh = traffic()[id]
-
-    if random() > probabilityWithinValue(trafficAmount(true), tAggresion.startchance, tAggresion.decay, tAggresion.threshold) then
+    local targetVeh = gameplay_traffic.getTrafficData()[id]
+    if not targetVeh then return end
+    if random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tAggresion.startchance, tAggresion.decay, tAggresion.threshold) then
         -- Aggression
         local res = 10 ^ tAggresion.resolution -- [0,1,2,3,4,5,6] allowed resolutions
         local maxr = tAggresion.maxAggression
-        local minr = trafficVars().baseAggression or tAggresion.baseAggression
+        local minr = gameplay_traffic.getTrafficVars().baseAggression or tAggresion.baseAggression
         local aggression = (
             ((random(0, res) / res) ^ tAggresion.skew) * (maxr - minr) + minr
         ) -- lower skew between 0.35 and 2
 
-        local function roleSetAggression(c, a)
-            if random() > probabilityWithinValue(trafficAmount(true), tAggresion.startchance, tAggresion.decay, tAggresion.threshold) then
-                local veh = traffic()[id]
-                c = c or 0
-                if c > 1 then return end
-                if veh and veh.role then
-                    veh.role.driver.aggression = aggression
-                    log('D', logTag, '(' .. id .. ') Set Role Aggression: (' .. a .. ')')
-                    return
-                end
-                log('D', logTag, '(' .. id .. ') Failed to set aggression: (' .. a .. ')')
-            end
+        -- set personality
+        local role, driver, personality = P.getDriverPersonality(id)
+        local minBound, maxBound = 0.1, 1
+        local basePersonality = { aggression = 0.5, patience = 0.5, bravery = 0.5 }
+        if role and driver and personality then
+            personality.aggression = max(min(aggression, maxBound), minBound)
+
+            local newPatience = basePersonality.patience / aggression
+            personality.patience = max(min(newPatience, maxBound), minBound)
+
+            local newBravery = basePersonality.bravery * aggression
+            personality.bravery = max(min(newBravery, maxBound), minBound)
+            driver.personality = personality
+            log('D', logTag, '(' .. id .. ') Set Personality (' .. dumps(driver.personality) .. ')')
         end
 
-        -- self.queuedFuncs = {}  keys: timer, func, args, vLua (vLua string overrides func and args)
-        roleSetAggression(0, aggression)
-        targetVeh.queuedFuncs.parvusTrafficSetAggression = {
-            timer = 0.25,
-            vLua = 'ai.setAggression(' .. aggression .. ')'
-        }
+        local obj = getObjectByID(id)
+        if not obj then return end
+        obj:queueLuaCommand('ai.setAggression(' .. aggression .. ')')
         log('D', logTag, '(' .. id .. ') Queued Aggression: (' .. aggression .. ')')
 
 
         -- Tougher Driver
-        local damageLimits = targetVeh.damageLimits
-        if aggression > tToughness.aggressionThreshold and damageLimits and random() > probabilityWithinValue(trafficAmount(true), tToughness.startchance, tToughness.decay, tToughness.threshold) then
-            log('D', logTag, '(' .. id .. ') Tougher Driver Spawned (Aggression=' .. aggression .. ')')
+        local damageLimits = { 50, 1000, 30000 }
+        local function toughenDriver(agr, mod)
             for i, v in ipairs(damageLimits) do
-                targetVeh.damageLimits[i] = floor(max(v, v * aggression))
+                targetVeh.damageLimits[i] = floor(max(v, (v * agr) + (mod or 0)))
             end
             log('D', logTag, 'Damage Limits: (' .. dumps(targetVeh.damageLimits) .. ')')
+            log('D', logTag, '(' .. id .. ') Tougher Driver Spawned (Aggression=' .. aggression .. ')')
+        end
+        if aggression > tToughness.aggressionThreshold and damageLimits and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tToughness.startchance, tToughness.decay, tToughness.threshold) then
+            toughenDriver(aggression)
         end
 
+
         -- Outlaws
-        if aggression > tOutlaw.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
-            targetVeh.queuedFuncs.parvusTrafficsetSpeedMode = {
-                timer = 0.25,
-                vLua = string.format('ai.setSpeedMode("off")'),
+        if aggression > tOutlaw.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
+            toughenDriver(aggression, 4000)
+            targetVeh.queuedFuncs.parvusTrafficSetSpeedMode = {
+                timer = 2,
+                vLua = 'ai.setSpeedMode("off")'
             }
             log('D', logTag, '(' .. id .. ') Outlaw Spawned (Aggression=' .. aggression .. ')')
 
             -- Reckless Outlaw
-            if aggression > tReckless.aggressionThreshold and random() > probabilityWithinValue(trafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
-                targetVeh.queuedFuncs.parvusTrafficSetAIRandom = {
-                    timer = 2.25,
-                    vLua = string.format('ai.setMode("random")')
+            if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+                toughenDriver(aggression, 6000)
+                targetVeh.queuedFuncs.parvusTrafficSetReckless = {
+                    timer = 2,
+                    vLua = 'ai.setMode("random")'
                 }
                 log('D', logTag, '(' .. id .. ') Reckless Outlaw Spawned (Aggression=' .. aggression .. ')')
             end
@@ -378,31 +348,43 @@ local function parvusTrafficSetupAggression(id)
     end
 end
 
--- when a vehicle is reset
 local function onVehicleResetted(id)
     -- Only During Traffic
-    if trafficGetState() ~= "on" then return end
-    local targetVeh = traffic()[id]
-    if targetVeh and targetVeh.isAi then
+    if gameplay_traffic.getState() ~= "on" then return end
+    local veh = gameplay_traffic.getTrafficData()[id]
+    if veh and veh.isAi then
+        P.setupVehData(id)
+        parvusTrafficSetupAggression(id)
+    end
+end
+
+-- on traffic action change role
+-- extensions.hook('onTrafficAction', self.id, 'changeRole', {targetId = self.role.targetId or 0, name = roleName, prevName = prevName, data = {}})
+local function onTrafficAction(id, name, data)
+    if name ~= 'changeRole' then return end
+    if gameplay_traffic.getState() ~= "on" then return end
+    local veh = gameplay_traffic.getTrafficData()[id]
+    if veh and veh.isAi then
+        P.setupVehData(id)
         parvusTrafficSetupAggression(id)
     end
 end
 
 local function onTrafficVehicleAdded(id)
-    trafficIdsSorted = tableKeysSorted(traffic())
+    trafficIdsSorted = tableKeysSorted(gameplay_traffic.getTrafficData())
 end
 
 local function onTrafficVehicleRemoved(id)
-    trafficIdsSorted = tableKeysSorted(traffic())
-    parvusTrafficResetAllBoards()
+    trafficIdsSorted = tableKeysSorted(gameplay_traffic.getTrafficData())
+    parvusAuxData.vehDataTable[id] = nil
 end
 
 -- parvusTraffic interface
-M.parvusTrafficResetAllBoards = parvusTrafficResetAllBoards
 M.parvusTrafficSetupAggression = parvusTrafficSetupAggression
 
 -- interface
 M.onUpdate = onUpdate
+M.onTrafficAction = onTrafficAction
 M.onTrafficVehicleAdded = onTrafficVehicleAdded
 M.onTrafficVehicleRemoved = onTrafficVehicleRemoved
 M.onExtensionLoaded = onExtensionLoaded
