@@ -162,7 +162,7 @@ function P.queueObstructionClear(callerID, targetID)
         func = function(cid, tid, lp, dst)
             local tv = gameplay_traffic.getTrafficData()[tid]
             local cv = gameplay_traffic.getTrafficData()[cid]
-            if tv then tv:honkHorn(max(0.25, square(random()))) end
+            if tv and tv.isAi then tv:honkHorn(max(0.25, square(random()))) end
             if cv and cv.isAi then cv:honkHorn(max(0.25, square(random()))) end
             if not tv then return end
             if tv.speed <= 1 and tv.pos:squaredDistance(lp) < dst then
