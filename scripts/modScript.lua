@@ -1,2 +1,3 @@
+---@diagnostic disable-next-line: discard-returns
 load('parvusTraffic')
-setExtensionUnloadMode('parvusTraffic', 'manual')
+setExtensionUnloadMode('parvusTraffic', 'auto')
