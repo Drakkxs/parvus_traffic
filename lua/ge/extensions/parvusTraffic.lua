@@ -324,7 +324,6 @@ local function parvusTrafficSetupAggression(id)
             toughenDriver(aggression)
         end
 
-
         -- Outlaws
         if aggression > tOutlaw.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
             toughenDriver(aggression, 4000)
@@ -335,14 +334,34 @@ local function parvusTrafficSetupAggression(id)
             log('D', logTag, '(' .. id .. ') Outlaw Spawned (Aggression=' .. aggression .. ')')
         end
 
-        -- Reckless Outlaw
+        -- Reckless
         if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
             toughenDriver(aggression, 6000)
-            targetVeh.queuedFuncs.parvusTrafficSetReckless = {
+            targetVeh.queuedFuncs.parvusTrafficSetRandom = {
                 timer = 2,
                 vLua = 'ai.setMode("random")'
             }
-            log('D', logTag, '(' .. id .. ') Reckless Outlaw Spawned (Aggression=' .. aggression .. ')')
+            log('D', logTag, '(' .. id .. ') Reckless Spawned (Aggression=' .. aggression .. ')')
+        end
+
+        -- Distracted
+        if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+            toughenDriver(aggression, 6000)
+            targetVeh.queuedFuncs.parvusTrafficSetUnAware = {
+                timer = 2,
+                vLua = 'ai.setAvoidCars("off")'
+            }
+            log('D', logTag, '(' .. id .. ') Distracted Spawned (Aggression=' .. aggression .. ')')
+        end
+
+        -- WrongWay
+        if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+            toughenDriver(aggression, 6000)
+            targetVeh.queuedFuncs.parvusTrafficSetUnAware = {
+                timer = 2,
+                vLua = 'ai.driveInLane("off")'
+            }
+            log('D', logTag, '(' .. id .. ') WrongWay Spawned (Aggression=' .. aggression .. ')')
         end
     end
 end
