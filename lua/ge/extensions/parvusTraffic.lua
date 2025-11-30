@@ -157,7 +157,7 @@ function P.queueObstructionClear(callerID, targetID)
     local targetVeh = gameplay_traffic.getTrafficData()[targetID]
     if targetVeh.queuedFuncs.parvusTrafficRemoveStuck then return end
     targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
-        timer = 60.00,
+        timer = 30.00,
         args = { callerID, targetID, targetVeh.pos, 3 },
         func = function(cid, tid, lp, dst)
             local tv = gameplay_traffic.getTrafficData()[tid]
@@ -188,9 +188,8 @@ function P.checkVehicle(id)
     local tv = gameplay_traffic.getTrafficData()[id]
     if tv and tv.isAi then
         local deadlockTimer = parvusAuxData.deadlockTimer
-        if (deadlockTimer or 0) > 60 then
+        if (deadlockTimer or 0) > 10 then
             -- there is a deadlock
-            log('D', logTag, '(' .. id .. ') Deadlock is active')
             local _, _, personality = P.getDriverPersonality(id)
             if
                 personality and
@@ -198,8 +197,8 @@ function P.checkVehicle(id)
             then
                 tv:honkHorn(max(0.25, square(random()) + personality.aggression)) -- aggresive drivers honk longer
                 log('D', logTag, '(' .. id .. ') Was made to honk to clear a deadlock ')
-                parvusAuxData.deadlockTimer = 0
             end
+            parvusAuxData.deadlockTimer = 0
         end
     end
 
@@ -334,16 +333,16 @@ local function parvusTrafficSetupAggression(id)
                 vLua = 'ai.setSpeedMode("off")'
             }
             log('D', logTag, '(' .. id .. ') Outlaw Spawned (Aggression=' .. aggression .. ')')
+        end
 
-            -- Reckless Outlaw
-            if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
-                toughenDriver(aggression, 6000)
-                targetVeh.queuedFuncs.parvusTrafficSetReckless = {
-                    timer = 2,
-                    vLua = 'ai.setMode("random")'
-                }
-                log('D', logTag, '(' .. id .. ') Reckless Outlaw Spawned (Aggression=' .. aggression .. ')')
-            end
+        -- Reckless Outlaw
+        if aggression > tReckless.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tReckless.startchance, tReckless.decay, tReckless.threshold) then
+            toughenDriver(aggression, 6000)
+            targetVeh.queuedFuncs.parvusTrafficSetReckless = {
+                timer = 2,
+                vLua = 'ai.setMode("random")'
+            }
+            log('D', logTag, '(' .. id .. ') Reckless Outlaw Spawned (Aggression=' .. aggression .. ')')
         end
     end
 end
