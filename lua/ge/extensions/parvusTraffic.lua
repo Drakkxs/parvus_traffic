@@ -157,7 +157,7 @@ function P.queueObstructionClear(callerID, targetID)
     local targetVeh = gameplay_traffic.getTrafficData()[targetID]
     if targetVeh.queuedFuncs.parvusTrafficRemoveStuck then return end
     targetVeh.queuedFuncs.parvusTrafficRemoveStuck = {
-        timer = 10.00,
+        timer = 60.00,
         args = { callerID, targetID, targetVeh.pos, 3 },
         func = function(cid, tid, lp, dst)
             local tv = gameplay_traffic.getTrafficData()[tid]
