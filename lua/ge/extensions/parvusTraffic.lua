@@ -301,7 +301,6 @@ local function parvusTrafficSetupAggression(id)
 
             local newBravery = basePersonality.bravery * aggression
             personality.bravery = max(min(newBravery, maxBound), minBound)
-            driver.personality = personality
             log('D', logTag, '(' .. id .. ') Set Personality (' .. dumps(driver.personality) .. ')')
         end
 
@@ -323,6 +322,9 @@ local function parvusTrafficSetupAggression(id)
         if aggression > tToughness.aggressionThreshold and damageLimits and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tToughness.startchance, tToughness.decay, tToughness.threshold) then
             toughenDriver(aggression)
         end
+
+        -- Emergency vehicles will not have their ai parameters affected beyond aggression to preserve any complex logic
+        if targetVeh.role and (targetVeh.role.name == 'police' or targetVeh.role.name == 'emergency') then return end
 
         -- Outlaws
         if aggression > tOutlaw.aggressionThreshold and random() < probabilityWithinValue(gameplay_traffic.getTrafficAmount(true), tOutlaw.startchance, tOutlaw.decay, tOutlaw.threshold) then
