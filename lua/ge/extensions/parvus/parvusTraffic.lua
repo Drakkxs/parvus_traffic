@@ -1,3 +1,4 @@
+-- lua\ge\extensions\parvus\parvusTraffic.lua
 local M = {}
 M.dependencies = { 'gameplay_traffic' }
 
@@ -11,6 +12,10 @@ end
 local function onUpdate(dtReal, dtSim)
     if gameplay_traffic.getState() ~= "on" then return end
     if dtSim <= 0 then return end
+
+    if state.aux.queuedVehicle == 0 then
+        state.aux.queuedVehicle = 1
+    end
 
     local stoppedAiVehCount, vehCount, vehCountAi = 0, 0, 0
 
@@ -32,6 +37,11 @@ local function onUpdate(dtReal, dtSim)
                 end
             end
         end
+    end
+
+    if vehCount == 0 then
+        state.aux.queuedVehicle = 1
+        return
     end
 
     state.aux.queuedVehicle = state.aux.queuedVehicle + 1

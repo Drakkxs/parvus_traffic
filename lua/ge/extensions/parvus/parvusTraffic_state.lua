@@ -17,7 +17,4 @@ M.tSpeeder = { aggressionThreshold = 0.5, startchance = 1, decay = 0.05, thresho
 M.tToughness = { aggressionThreshold = 1, startchance = 1, decay = 0.1, threshold = 2 }
 M.tReckless = { aggressionThreshold = 1.9, startchance = 1, decay = 0.1, threshold = 2 }
 
-M.onExtensionLoaded = function()
-  log('I', M.logTag, 'state module loaded')
-end
 return M
