@@ -1,4 +1,4 @@
 -- scripts/modScript.lua
 ---@diagnostic disable-next-line: discard-returns
-load('parvusTraffic')
-setExtensionUnloadMode('parvusTraffic', 'manual')
+load('parvus/parvusTraffic')
+setExtensionUnloadMode('parvus/parvusTraffic', 'manual')
