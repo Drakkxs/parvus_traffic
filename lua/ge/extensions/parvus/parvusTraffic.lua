@@ -68,19 +68,15 @@ local function onVehicleResetted(id)
 end
 
 local function onTrafficAction(id, name, data)
+    
     if name ~= 'changeRole' then return end
     if gameplay_traffic.getState() ~= "on" then return end
-    if not data then return end
 
     local veh = gameplay_traffic.getTrafficData()[id]
-    if not veh or not veh.isAi then return end
-    -- if veh._parvusRedirectingRole then return end
-
-    -- if data.name == 'standard' then
-    --     veh._parvusRedirectingRole = true
-    --     veh:setRole('parvus')
-    --     veh._parvusRedirectingRole = nil
-    -- end
+    if veh and veh.isAi then
+        state.aux.vehDataTable[id] = {} -- reset per-vehicle data
+        L.setupAggression(id)
+    end
 end
 
 local function onTrafficVehicleAdded(id)
