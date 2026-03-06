@@ -229,6 +229,7 @@ function L.setupAggression(id)
         toughenDriver(aggression)
     end
 
+    log('D', logTag, '(' .. id .. ') Current Role: (' .. dumps(targetVeh.role.name) .. ')')
     -- standard role is the only role that is targeted for redirection
     if role and role.name ~= 'standard' then return end
 
@@ -237,7 +238,7 @@ function L.setupAggression(id)
     state.aux.vehDataTable[id]._parvusRedirectingRole = true
     targetVeh:setRole('parvus')
     state.aux.vehDataTable[id]._parvusRedirectingRole = nil
-    log('D', logTag, '(' .. id .. ') Redirected to Parvus Role: (' .. dumps(targetVeh.role) .. ')')
+    log('D', logTag, '(' .. id .. ') Redirected to Parvus Role: (' .. dumps(targetVeh.role.name) .. ')')
 end
 
 return L
