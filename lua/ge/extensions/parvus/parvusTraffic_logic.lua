@@ -7,7 +7,7 @@ local floor = math.floor
 local min = math.min
 local max = math.max
 
-
+local state = require('ge/extensions/parvus/parvusTraffic_state')
 
 -- helper: probability curve
 local function probabilityWithinValue(value, startChance, decay, threshold)
@@ -37,38 +37,34 @@ function L.checkTargetVisible(id, targetId)
 end
 
 function L.getTrafficInfront(id, pos, distance, Aionly, trafficIdsSorted)
-  local veh = gameplay_traffic.getTrafficData()[id]
-  if not veh then return nil, math.huge end
+    local veh = gameplay_traffic.getTrafficData()[id]
+    if not veh then return nil, math.huge end
 
-  local callerPos = pos or veh.pos
-  local bestId, bestDistSq
-  local maxDistSq = distance and (distance * distance) or math.huge
+    local callerPos = pos or veh.pos
+    local bestId, bestDistSq
+    local maxDistSq = distance and (distance * distance) or math.huge
 
-  for _, ctID in ipairs(trafficIdsSorted) do
-    if ctID ~= id then
-      local ctVeh = gameplay_traffic.getTrafficData()[ctID]
-      if ctVeh and (not Aionly or ctVeh.isAi) then
+    for _, ctID in ipairs(trafficIdsSorted) do
+        local ctVeh = gameplay_traffic.getTrafficData()[ctID]
         local distSq = callerPos:squaredDistance(ctVeh.pos)
         if distSq < maxDistSq then
-          -- cheap “in front” test before raycast
-          if veh and ctVeh and veh.dirVec:dot(ctVeh.pos - callerPos) > 0 then
-            ---@diagnostic disable-next-line: undefined-field
-            if be:getObjectActive(ctID) then
-              if (not bestDistSq) or distSq < bestDistSq then
-                -- expensive raycast last
-                if L.checkTargetVisible(id, ctID) then
-                  bestId = ctID
-                  bestDistSq = distSq
+            -- cheap “in front” test before raycast
+            if veh and ctVeh and veh.dirVec:dot(ctVeh.pos - callerPos) > 0 then
+                ---@diagnostic disable-next-line: undefined-field
+                if be:getObjectActive(ctID) then
+                    if (not bestDistSq) or distSq < bestDistSq then
+                        -- expensive raycast last
+                        if L.checkTargetVisible(id, ctID) then
+                            bestId = ctID
+                            bestDistSq = distSq
+                        end
+                    end
                 end
-              end
             end
-          end
         end
-      end
     end
-  end
 
-  return bestId, bestDistSq and math.sqrt(bestDistSq) or math.huge
+    return bestId, bestDistSq and math.sqrt(bestDistSq) or math.huge
 end
 
 function L.getVehData(aux, id)
@@ -111,7 +107,7 @@ function L.queueObstructionClear(logTag, callerID, targetID)
     end
 end
 
-function L.hornActive(state, callerID)
+function L.hornActive(callerID)
     local logTag = state.logTag
     local aux = state.aux
 
@@ -145,13 +141,13 @@ function L.hornActive(state, callerID)
 
     local honkeeObj = getObjectByID(targetID)
     if not honkeeObj then return end
-    honkeeObj:queueLuaCommand('ai.setPullOver("false")')
-    log('D', logTag, '(' .. targetID .. ') Queued Ai PullOver: (false)')
+    honkeeObj:queueLuaCommand('ai.reset()')
+    log('D', logTag, '(' .. targetID .. ') Queued Ai reset')
 
     L.queueObstructionClear(logTag, callerID, targetID)
 end
 
-function L.checkVehicle(state, id)
+function L.checkVehicle(id)
     local aux = state.aux
     local logTag = state.logTag
 
@@ -178,13 +174,13 @@ function L.checkVehicle(state, id)
     local prevHorn = vehData.lastHornState or false
 
     if currentHorn and not prevHorn then
-        L.hornActive(state, id)
+        L.hornActive(id)
     end
 
     vehData.lastHornState = currentHorn
 end
 
-function L.setupAggression(state, id)
+function L.setupAggression(id)
     local logTag = state.logTag
     local aux = state.aux
     local tAggresion = state.tAggresion

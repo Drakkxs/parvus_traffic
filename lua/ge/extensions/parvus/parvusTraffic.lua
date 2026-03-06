@@ -33,7 +33,7 @@ local function onUpdate(dtReal, dtSim)
             ---@diagnostic disable-next-line: undefined-field
             if be:getObjectActive(id) then
                 if i == state.aux.queuedVehicle then
-                    L.checkVehicle(state, id)
+                    L.checkVehicle(id)
                 end
             end
         end
@@ -63,7 +63,7 @@ local function onVehicleResetted(id)
     local veh = gameplay_traffic.getTrafficData()[id]
     if veh and veh.isAi then
         state.aux.vehDataTable[id] = {} -- reset per-vehicle data
-        L.setupAggression(state, id)
+        L.setupAggression(id)
     end
 end
 
@@ -74,13 +74,13 @@ local function onTrafficAction(id, name, data)
 
     local veh = gameplay_traffic.getTrafficData()[id]
     if not veh or not veh.isAi then return end
-    if veh._parvusRedirectingRole then return end
+    -- if veh._parvusRedirectingRole then return end
 
-    if data.name == 'standard' then
-        veh._parvusRedirectingRole = true
-        veh:setRole('parvus')
-        veh._parvusRedirectingRole = nil
-    end
+    -- if data.name == 'standard' then
+    --     veh._parvusRedirectingRole = true
+    --     veh:setRole('parvus')
+    --     veh._parvusRedirectingRole = nil
+    -- end
 end
 
 local function onTrafficVehicleAdded(id)
